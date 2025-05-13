@@ -1,3 +1,4 @@
+#NM_005228.3:c.2648T>C
 import datetime
 import requests
 import re
@@ -32,7 +33,7 @@ def format_hgvs_cdna_transcript_id_2(hgvs_cdna_transcript_id):
     return hgvs_cdna_transcript_id_formatted_2
 
 def get_current_version_hgvs_cdna_transcript_id(hgvs_cdna_transcript_id_formatted_1):
-    '''Gets the current version of the HGVS cDNA transcript ID. Example: NM_005228.3 -> NM_005228.4'''
+    '''Gets the current version of the HGVS cDNA transcript ID. Example: NM_005228.3 -> NM_005228.5'''
     url = f'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nucleotide&id={hgvs_cdna_transcript_id_formatted_1}&rettype=gb&retmode=xml'
     response = requests.get(url)
     root = ET.fromstring(response.content)
@@ -41,7 +42,7 @@ def get_current_version_hgvs_cdna_transcript_id(hgvs_cdna_transcript_id_formatte
         return current_version_hgvs_cdna_transcript_id
 
 def get_full_current_version_hgvs_cdna_transcript_id(current_version_hgvs_cdna_transcript_id, hgvs_cdna_transcript_id_formatted_2):
-    '''Gets the full, current version of the HGVS cDNA transcript ID. Example: NM_005228.4:c.2648T>C -> NM_005228.4:c.2648T>C:2648T>C'''
+    '''Gets the full, current version of the HGVS cDNA transcript ID. Example: NM_005228.3:c.2648T>C -> NM_005228.5:c.2648T>C'''
     full_current_version_hgvs_cdna_transcript_id = current_version_hgvs_cdna_transcript_id + ':' + hgvs_cdna_transcript_id_formatted_2
     return full_current_version_hgvs_cdna_transcript_id
 
@@ -144,41 +145,70 @@ def get_amino_acid_change(current_version_hgvs_cdna_transcript_id, hgvs_cdna_tra
             amino_acid_change = consequence.get('amino_acids', 'Not specified')
     return variant_codon_start, variant_codon_end, amino_acid_change
 
-def get_grch38_variant_position(current_version_hgvs_cdna_transcript_id):
-    '''Gets the variant position (in GRCh38 currently) for the specified current version HGVS cDNA transcript ID.'''
-    url = f'https://www.ncbi.nlm.nih.gov/snp/?term={current_version_hgvs_cdna_transcript_id}'
-    response = send_request(url)
+def get_clinvar_accession_id(full_current_version_hgvs_cdna_transcript_id):
+    url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=clinvar&term={full_current_version_hgvs_cdna_transcript_id}&retmode=json"
+    response = requests.get(url)
+    data = response.json()
+    if 'esearchresult' in data and 'idlist' in data['esearchresult']:
+        ids = data['esearchresult']['idlist']
+        clinvar_accession_id = ids[0]
+    return clinvar_accession_id
+
+def get_rsID(clinvar_accession_id):
+    '''Scrapes the rsID from the ClinVar Variation page.'''
+    url = f'https://www.ncbi.nlm.nih.gov/clinvar/variation/{clinvar_accession_id}/'
+    response = requests.get(url)
     soup = BeautifulSoup(response.text, 'html.parser')
-    dt_tags = soup.find_all('dt')
-    for dt in dt_tags:
-        if dt.text.strip() == 'Chromosome:':
-            dd_tag = dt.find_next('dd')
-            entries = dd_tag.decode_contents().split('<br/>')
-            for entry in entries:
-                if 'GRCh38' in entry:
-                    entry_clean = BeautifulSoup(entry, 'html.parser').text.strip()
-                    parts = entry_clean.split(' ')
-                    for part in parts:
-                        if 'GRCh38' in part:
-                            position = part.split(':')[-1].replace('GRCh38', '').strip()
-                            grch38_variant_position = int(''.join(filter(str.isdigit, position)))
-                            return grch38_variant_position
+    rsid_link = soup.find('a', href=lambda href: href and '/snp/rs' in href)
+    rsID = rsid_link.text.strip()
+    rsID = rsID.replace("dbSNP:", "")
+    rsID = rsID.strip()
+    return rsID
+    
+def get_grch38_variant_position(rsID):
+    '''Gets the variant position (in GRCh38 currently) for the specified current version HGVS cDNA transcript ID's rsID.'''
+    url = f"https://rest.ensembl.org/variation/human/{rsID}?content-type=application/json"
+    response = requests.get(url)
+    data = response.json()
+    # Check for mappings to GRCh38
+    for mapping in data.get("mappings", []):
+        if mapping.get("assembly_name") == "GRCh38":
+            grch38_variant_position = mapping.get("start")
+            return grch38_variant_position
+    return None
 
 def get_transcript_details_and_ensembl_protein_id(ensembl_transcript_id, grch38_variant_position):
-    '''Gets the Ensembl protein ID, transcript length, translation length, total exons, coding exons, 
+    '''Gets the Ensembl protein ID, transcript length, translation length, total exons, coding exons,
     exon number, and coding exons for the specified Ensembl transcript ID and variant position.'''
+    
     url = f'https://rest.ensembl.org/lookup/id/{ensembl_transcript_id}?expand=1'
     headers = {'Content-Type': 'application/json'}
     response = send_request(url, headers)
     data = response.json()
+    
+
+    # Extract basic information
     transcript_length = data['length']
     translation = data['Translation']
     translation_length = translation['length']
-    total_exons = len(data['Exon']) if 'Exon' in data else 0
-    coding_exons = sum(1 for exon in data['Exon'] if exon['start'] <= translation.get('end', 0) and exon['end'] >= translation.get('start', float('inf')))
-    exon_number = next((index for index, exon in enumerate(data.get('Exon', []), start=1) if exon['start'] <= grch38_variant_position <= exon['end']), None)
-    ensembl_protein_id = data['Translation']['id']
-    return ensembl_protein_id, transcript_length, translation_length, total_exons, coding_exons, exon_number, coding_exons
+    ensembl_protein_id = translation['id']
+
+    # Total number of GRCh38 exons
+    total_exons = sum(1 for exon in data['Exon'] if exon.get('assembly_name') == 'GRCh38')
+
+    # Number of coding exons in GRCh38
+    coding_exons = sum(1 for exon in data['Exon']
+                       if exon.get('assembly_name') == 'GRCh38' and 
+                       int(exon['start']) <= int(translation['end']) and 
+                       int(exon['end']) >= int(translation['start']))
+
+    # Determine the exon number containing the variant position (GRCh38 only)
+    exon_number = next((index + 1 for index, exon in enumerate(data['Exon'])
+                        if exon.get('assembly_name') == 'GRCh38' and 
+                        int(exon['start']) <= int(grch38_variant_position) <= int(exon['end'])), None)
+
+    return ensembl_protein_id, transcript_length, translation_length, total_exons, coding_exons, exon_number
+
 
 def get_pfam_smart_protein_domains(ensembl_protein_id):
     '''Gets the protein domains from the sources Pfam and Smart for the specified Ensembl protein ID.'''
@@ -195,17 +225,7 @@ def get_pfam_smart_protein_domains(ensembl_protein_id):
                 'Start': str(domain['start']),
                 'End': str(domain['end'])
             })
-    return domains
-
-def get_rsID(full_current_version_hgvs_cdna_transcript_id):
-    '''Gets the rsID for the specified full, current version of the HGVS cDNA transcript ID.'''
-    url = f'https://www.ncbi.nlm.nih.gov/snp/?term={full_current_version_hgvs_cdna_transcript_id}'
-    response = send_request(url)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    rsid_link = soup.find('a', href=lambda href: href and '/snp/rs' in href)
-    if rsid_link:
-        rsID = rsid_link.text.strip()
-        return rsID  
+    return domains 
 
 def get_clinvar(rsID):
     '''Gets the variant classification, variant condition, and variant more info for the specified rsID. There may or may not be
@@ -275,14 +295,15 @@ def get_results_dict(hgvs_cdna_transcript_id):
     cytogenetic_band = get_cytogenetic_band(start, end, chromosome)
     high_protein_expression = get_high_protein_expression(ensembl_gene_id)
     variant_codon_start, variant_codon_end, amino_acid_change = get_amino_acid_change(current_version_hgvs_cdna_transcript_id, hgvs_cdna_transcript_id_formatted_2, ensembl_transcript_id)
-    grch38_variant_position = get_grch38_variant_position(full_current_version_hgvs_cdna_transcript_id)
-    ensembl_protein_id, transcript_length, translation_length, total_exons, coding_exons, exon_number, coding_exons = get_transcript_details_and_ensembl_protein_id(ensembl_transcript_id, grch38_variant_position)
+    clinvar_accession_id = get_clinvar_accession_id(full_current_version_hgvs_cdna_transcript_id)
+    rsID = get_rsID(clinvar_accession_id)
+    grch38_variant_position = get_grch38_variant_position(rsID)
+    ensembl_protein_id, transcript_length, translation_length, total_exons, coding_exons, exon_number = get_transcript_details_and_ensembl_protein_id(ensembl_transcript_id, grch38_variant_position)
     pfam_smart_protein_domains = get_pfam_smart_protein_domains(ensembl_protein_id)
-    rsID = get_rsID(full_current_version_hgvs_cdna_transcript_id)
     cleaned_clinvar = get_clinvar(rsID)
     source_info = (
     f'https://www.proteinatlas.org/{ensembl_gene_id}-{gene_symbol}/tissue\n'
-    f'https://www.ncbi.nlm.nih.gov/snp/?term={current_version_hgvs_cdna_transcript_id}'
+    f'https://www.ncbi.nlm.nih.gov/snp/?term={rsID}'
     )
     if len(cleaned_clinvar) > 0:
         source_info += f'\nhttps://www.ncbi.nlm.nih.gov/clinvar/?term={rsID}'
