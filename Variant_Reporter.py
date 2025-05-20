@@ -35,7 +35,7 @@ def format_hgvs_cdna_transcript_id_2(hgvs_cdna_transcript_id):
 def get_current_version_hgvs_cdna_transcript_id(hgvs_cdna_transcript_id_formatted_1):
     '''Gets the current version of the HGVS cDNA transcript ID. Example: NM_005228.3 -> NM_005228.5'''
     url = f'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nucleotide&id={hgvs_cdna_transcript_id_formatted_1}&rettype=gb&retmode=xml'
-    response = requests.get(url)
+    response = send_request(url)
     root = ET.fromstring(response.content)
     for item in root.findall('.//GBSeq'):
         current_version_hgvs_cdna_transcript_id = item.find('GBSeq_accession-version').text
@@ -53,12 +53,7 @@ def validate_full_current_version_hgvs_cdna_transcript_id(full_current_version_h
     url = f'https://rest.ensembl.org/vep/human/hgvs/{full_current_version_hgvs_cdna_transcript_id}?'
     headers = {"Content-Type": "application/json"}
     response = send_request(url, headers)
-    if response.status_code == 200:
-        data = response.json()
-        if 'error' not in data:
-            return True
-    return False
-
+    
 def get_ensembl_transcript_id(hgvs_cdna_transcript_id_formatted_1):
     '''Gets the Ensembl transcript ID for the specified HGVS cDNA transcript ID.'''
     url = f'https://rest.ensembl.org/xrefs/symbol/homo_sapiens/{hgvs_cdna_transcript_id_formatted_1}?external_db=RefSeq_mRNA'
@@ -83,7 +78,7 @@ def get_full_gene_name_and_ensembl_gene_id(gene_symbol):
     '''Gets the full gene name and Ensembl gene ID for the specified gene symbol.'''
     url = f'https://rest.ensembl.org/lookup/symbol/homo_sapiens/{gene_symbol}'
     headers = {'Content-Type': 'application/json'}
-    response = requests.get(url, headers=headers)
+    response = send_request(url, headers=headers)
     data = response.json()
     description = data.get('description')
     match = re.match(r"([^[]+)", description)
@@ -94,7 +89,7 @@ def get_full_gene_name_and_ensembl_gene_id(gene_symbol):
 def get_gene_start_end_chromosome(gene_symbol):
     '''Gets the genomic start/end positions and chromosome number of the specified gene symbol.'''
     url = f'https://api.genome.ucsc.edu/search?search={gene_symbol}&genome=hg38'
-    response = requests.get(url)
+    response = send_request(url)
     data = response.json()
     for match in data['positionMatches'][0]['matches']:
         if gene_symbol in match['posName'] and 'ENST' in match['hgFindMatches']:
@@ -106,7 +101,7 @@ def get_gene_start_end_chromosome(gene_symbol):
 def get_cytogenetic_band(chromosome, start, end):
     '''Gets the cytogenetic band for the specified chromosome, start, and end positions.'''
     url = f'https://api.genome.ucsc.edu/getData/track?track=cytoBand;genome=hg38;chrom={chromosome};start={start};end={end}'
-    response = requests.get(url)
+    response = send_request(url)
     data = response.json()
     cytogenetic_band = data['cytoBand']
     chromosome = cytogenetic_band[0]['chrom'][3:]
@@ -147,7 +142,7 @@ def get_amino_acid_change(current_version_hgvs_cdna_transcript_id, hgvs_cdna_tra
 
 def get_clinvar_accession_id(full_current_version_hgvs_cdna_transcript_id):
     url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=clinvar&term={full_current_version_hgvs_cdna_transcript_id}&retmode=json"
-    response = requests.get(url)
+    response = send_request(url)
     data = response.json()
     if 'esearchresult' in data and 'idlist' in data['esearchresult']:
         ids = data['esearchresult']['idlist']
@@ -157,7 +152,7 @@ def get_clinvar_accession_id(full_current_version_hgvs_cdna_transcript_id):
 def get_rsID(clinvar_accession_id):
     '''Scrapes the rsID from the ClinVar Variation page.'''
     url = f'https://www.ncbi.nlm.nih.gov/clinvar/variation/{clinvar_accession_id}/'
-    response = requests.get(url)
+    response = send_request(url)
     soup = BeautifulSoup(response.text, 'html.parser')
     rsid_link = soup.find('a', href=lambda href: href and '/snp/rs' in href)
     rsID = rsid_link.text.strip()
@@ -168,7 +163,7 @@ def get_rsID(clinvar_accession_id):
 def get_grch38_variant_position(rsID):
     '''Gets the variant position (in GRCh38 currently) for the specified current version HGVS cDNA transcript ID's rsID.'''
     url = f"https://rest.ensembl.org/variation/human/{rsID}?content-type=application/json"
-    response = requests.get(url)
+    response = send_request(url)
     data = response.json()
     # Check for mappings to GRCh38
     for mapping in data.get("mappings", []):
@@ -186,7 +181,6 @@ def get_transcript_details_and_ensembl_protein_id(ensembl_transcript_id, grch38_
     response = send_request(url, headers)
     data = response.json()
     
-
     # Extract basic information
     transcript_length = data['length']
     translation = data['Translation']
@@ -286,8 +280,7 @@ def get_results_dict(hgvs_cdna_transcript_id):
     hgvs_cdna_transcript_id_formatted_2 = format_hgvs_cdna_transcript_id_2(hgvs_cdna_transcript_id)
     current_version_hgvs_cdna_transcript_id = get_current_version_hgvs_cdna_transcript_id(hgvs_cdna_transcript_id_formatted_1)
     full_current_version_hgvs_cdna_transcript_id = get_full_current_version_hgvs_cdna_transcript_id(current_version_hgvs_cdna_transcript_id, hgvs_cdna_transcript_id_formatted_2)
-    if not validate_full_current_version_hgvs_cdna_transcript_id(full_current_version_hgvs_cdna_transcript_id):
-        abort(400, 'Invalid HGVS ID. Please enter a valid HGVS ID.')
+    validate_full_current_version_hgvs_cdna_transcript_id(full_current_version_hgvs_cdna_transcript_id)
     ensembl_transcript_id = get_ensembl_transcript_id(hgvs_cdna_transcript_id_formatted_1)
     gene_symbol = get_gene_symbol(ensembl_transcript_id)
     full_gene_name, ensembl_gene_id = get_full_gene_name_and_ensembl_gene_id(gene_symbol)
