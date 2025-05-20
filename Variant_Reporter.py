@@ -210,13 +210,12 @@ def get_pfam_smart_protein_domains(ensembl_protein_id):
     domain_data = response.json()
     domains = []
     for domain in domain_data:
-        if domain.get('type') in ['Pfam', 'Smart']:
-            domains.append({
-                'Source': domain['type'],
-                'Description': domain.get('description'),
-                'Start': str(domain['start']),
-                'End': str(domain['end'])
-            })
+        domains.append({
+            'Source': domain['type'],
+            'Description': domain.get('description'),
+            'Start': str(domain['start']),
+            'End': str(domain['end'])
+        })
     return domains 
 
 def get_clinvar(rsID):
