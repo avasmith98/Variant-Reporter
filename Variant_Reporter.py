@@ -47,9 +47,7 @@ def get_full_current_version_hgvs_cdna_transcript_id(current_version_hgvs_cdna_t
     return full_current_version_hgvs_cdna_transcript_id
 
 def validate_full_current_version_hgvs_cdna_transcript_id(full_current_version_hgvs_cdna_transcript_id):
-    '''Checks if the specified HGVS ID is valid. Returns True if valid, False otherwise. Sometimes, other functions 
-    still return a response and will even parse the response and generate a PDF with incorrect information even if the ID is invalid, 
-    so this function is used to check if the ID is valid and will result in the program being aborted program if it is not.'''
+    '''Checks if the specified HGVS ID is valid.'''
     url = f'https://rest.ensembl.org/vep/human/hgvs/{full_current_version_hgvs_cdna_transcript_id}?'
     headers = {"Content-Type": "application/json"}
     response = send_request(url, headers)
