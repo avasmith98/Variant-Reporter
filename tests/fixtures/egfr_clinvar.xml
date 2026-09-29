@@ -1,0 +1,148 @@
+<ClinVarResult>
+  <ClassifiedRecord>
+    <SimpleAllele AlleleID="1045029" VariationID="1050891">
+      <GeneList>
+        <Gene Symbol="EGFR" FullName="epidermal growth factor receptor" GeneID="1956" HGNC_ID="HGNC:3236" Source="submitted" RelationshipType="within single gene">
+          <Location>
+            <CytogeneticLocation>7p11.2</CytogeneticLocation>
+            <SequenceLocation Assembly="GRCh38" AssemblyAccessionVersion="GCF_000001405.38" AssemblyStatus="current" Chr="7" Accession="NC_000007.14" start="55019017" stop="55211628" display_start="55019017" display_stop="55211628" Strand="+" />
+            <SequenceLocation Assembly="GRCh37" AssemblyAccessionVersion="GCF_000001405.25" AssemblyStatus="previous" Chr="7" Accession="NC_000007.13" start="55086724" stop="55275030" display_start="55086724" display_stop="55275030" Strand="+" />
+          </Location>
+          <OMIM>131550</OMIM>
+          <Haploinsufficiency last_evaluated="2022-05-11" ClinGen="https://www.ncbi.nlm.nih.gov/projects/dbvar/ISCA/isca_gene.cgi?sym=EGFR">No evidence available</Haploinsufficiency>
+          <Triplosensitivity last_evaluated="2022-05-11" ClinGen="https://www.ncbi.nlm.nih.gov/projects/dbvar/ISCA/isca_gene.cgi?sym=EGFR">No evidence available</Triplosensitivity>
+        </Gene>
+      </GeneList>
+      <Location>
+        <CytogeneticLocation>7p11.2</CytogeneticLocation>
+        <SequenceLocation Assembly="GRCh38" AssemblyAccessionVersion="GCF_000001405.38" forDisplay="true" AssemblyStatus="current" Chr="7" Accession="NC_000007.14" start="55192788" stop="55192788" display_start="55192788" display_stop="55192788" variantLength="1" positionVCF="55192788" referenceAlleleVCF="T" alternateAlleleVCF="C" />
+        <SequenceLocation Assembly="GRCh37" AssemblyAccessionVersion="GCF_000001405.25" AssemblyStatus="previous" Chr="7" Accession="NC_000007.13" start="55260481" stop="55260481" display_start="55260481" display_stop="55260481" variantLength="1" positionVCF="55260481" referenceAlleleVCF="T" alternateAlleleVCF="C" />
+      </Location>
+      <HGVSlist>
+        <HGVS Type="coding">
+          <NucleotideExpression sequenceAccessionVersion="NM_005228.4" sequenceAccession="NM_005228" sequenceVersion="4" change="c.2648T&gt;C">
+            <Expression>NM_005228.4:c.2648T&gt;C</Expression>
+          </NucleotideExpression>
+        </HGVS>
+        <HGVS Type="coding">
+          <NucleotideExpression sequenceAccessionVersion="NM_005228.3" sequenceAccession="NM_005228" sequenceVersion="3" change="c.2648T&gt;C">
+            <Expression>NM_005228.3:c.2648T&gt;C</Expression>
+          </NucleotideExpression>
+        </HGVS>
+        <HGVS Type="genomic">
+          <NucleotideExpression sequenceAccessionVersion="LRG_304" sequenceAccession="LRG_304">
+            <Expression>LRG_304:g.178757T&gt;C</Expression>
+          </NucleotideExpression>
+        </HGVS>
+        <HGVS Assembly="GRCh37" Type="genomic, top-level">
+          <NucleotideExpression sequenceAccessionVersion="NC_000007.13" sequenceAccession="NC_000007" sequenceVersion="13" change="g.55260481T&gt;C" Assembly="GRCh37">
+            <Expression>NC_000007.13:g.55260481T&gt;C</Expression>
+          </NucleotideExpression>
+        </HGVS>
+        <HGVS Assembly="GRCh38" Type="genomic, top-level">
+          <NucleotideExpression sequenceAccessionVersion="NC_000007.14" sequenceAccession="NC_000007" sequenceVersion="14" change="g.55192788T&gt;C" Assembly="GRCh38">
+            <Expression>NC_000007.14:g.55192788T&gt;C</Expression>
+          </NucleotideExpression>
+        </HGVS>
+        <HGVS Type="genomic">
+          <NucleotideExpression sequenceAccessionVersion="NG_007726.3" sequenceAccession="NG_007726" sequenceVersion="3" change="g.178757T&gt;C">
+            <Expression>NG_007726.3:g.178757T&gt;C</Expression>
+          </NucleotideExpression>
+        </HGVS>
+        <HGVS Type="coding">
+          <NucleotideExpression sequenceAccessionVersion="NM_001346897.2" sequenceAccession="NM_001346897" sequenceVersion="2" change="c.2513T&gt;C">
+            <Expression>NM_001346897.2:c.2513T&gt;C</Expression>
+          </NucleotideExpression>
+          <ProteinExpression sequenceAccessionVersion="NP_001333826.1" sequenceAccession="NP_001333826" sequenceVersion="1" change="p.Leu838Ser" singleLetterProteinChange="L838S">
+            <Expression>NP_001333826.1:p.Leu838Ser</Expression>
+          </ProteinExpression>
+          <MolecularConsequence ID="SO:0001583" Type="missense variant" DB="SO" />
+        </HGVS>
+        <HGVS Type="coding">
+          <NucleotideExpression sequenceAccessionVersion="NM_001346898.2" sequenceAccession="NM_001346898" sequenceVersion="2" change="c.2648T&gt;C">
+            <Expression>NM_001346898.2:c.2648T&gt;C</Expression>
+          </NucleotideExpression>
+          <ProteinExpression sequenceAccessionVersion="NP_001333827.1" sequenceAccession="NP_001333827" sequenceVersion="1" change="p.Leu883Ser" singleLetterProteinChange="L883S">
+            <Expression>NP_001333827.1:p.Leu883Ser</Expression>
+          </ProteinExpression>
+          <MolecularConsequence ID="SO:0001583" Type="missense variant" DB="SO" />
+        </HGVS>
+        <HGVS Type="coding">
+          <NucleotideExpression sequenceAccessionVersion="NM_001346899.2" sequenceAccession="NM_001346899" sequenceVersion="2" change="c.2513T&gt;C">
+            <Expression>NM_001346899.2:c.2513T&gt;C</Expression>
+          </NucleotideExpression>
+          <ProteinExpression sequenceAccessionVersion="NP_001333828.1" sequenceAccession="NP_001333828" sequenceVersion="1" change="p.Leu838Ser" singleLetterProteinChange="L838S">
+            <Expression>NP_001333828.1:p.Leu838Ser</Expression>
+          </ProteinExpression>
+          <MolecularConsequence ID="SO:0001583" Type="missense variant" DB="SO" />
+        </HGVS>
+        <HGVS Type="coding">
+          <NucleotideExpression sequenceAccessionVersion="NM_001346900.2" sequenceAccession="NM_001346900" sequenceVersion="2" change="c.2489T&gt;C">
+            <Expression>NM_001346900.2:c.2489T&gt;C</Expression>
+          </NucleotideExpression>
+          <ProteinExpression sequenceAccessionVersion="NP_001333829.1" sequenceAccession="NP_001333829" sequenceVersion="1" change="p.Leu830Ser" singleLetterProteinChange="L830S">
+            <Expression>NP_001333829.1:p.Leu830Ser</Expression>
+          </ProteinExpression>
+          <MolecularConsequence ID="SO:0001583" Type="missense variant" DB="SO" />
+        </HGVS>
+        <HGVS Type="coding">
+          <NucleotideExpression sequenceAccessionVersion="NM_001346941.2" sequenceAccession="NM_001346941" sequenceVersion="2" change="c.1847T&gt;C">
+            <Expression>NM_001346941.2:c.1847T&gt;C</Expression>
+          </NucleotideExpression>
+          <ProteinExpression sequenceAccessionVersion="NP_001333870.1" sequenceAccession="NP_001333870" sequenceVersion="1" change="p.Leu616Ser" singleLetterProteinChange="L616S">
+            <Expression>NP_001333870.1:p.Leu616Ser</Expression>
+          </ProteinExpression>
+          <MolecularConsequence ID="SO:0001583" Type="missense variant" DB="SO" />
+        </HGVS>
+        <HGVS Type="coding">
+          <NucleotideExpression sequenceAccessionVersion="NM_005228.5" sequenceAccession="NM_005228" sequenceVersion="5" change="c.2648T&gt;C" MANESelect="true">
+            <Expression>NM_005228.5:c.2648T&gt;C</Expression>
+          </NucleotideExpression>
+          <ProteinExpression sequenceAccessionVersion="NP_005219.2" sequenceAccession="NP_005219" sequenceVersion="2" change="p.Leu883Ser" singleLetterProteinChange="L883S">
+            <Expression>NP_005219.2:p.Leu883Ser</Expression>
+          </ProteinExpression>
+          <MolecularConsequence ID="SO:0001583" Type="missense variant" DB="SO" />
+        </HGVS>
+      </HGVSlist>
+      <XRefList>
+        <XRef ID="CA367580782" DB="ClinGen" />
+        <XRef Type="rs" ID="1787457693" DB="dbSNP" />
+      </XRefList>
+    </SimpleAllele>
+    <RCVList>
+      <RCVAccession Title="NM_005228.5(EGFR):c.2648T&gt;C (p.Leu883Ser) AND EGFR-related lung cancer" Accession="RCV001358850" Version="9">
+        <ClassifiedConditionList TraitSetID="9187">
+          <ClassifiedCondition DB="MedGen" ID="CN130014">EGFR-related lung cancer</ClassifiedCondition>
+        </ClassifiedConditionList>
+        <RCVClassifications>
+          <GermlineClassification>
+            <ReviewStatus>criteria provided, single submitter</ReviewStatus>
+            <Description DateLastEvaluated="2025-12-04" SubmissionCount="1">Uncertain significance</Description>
+          </GermlineClassification>
+        </RCVClassifications>
+      </RCVAccession>
+      <RCVAccession Title="NM_005228.5(EGFR):c.2648T&gt;C (p.Leu883Ser) AND not provided" Accession="RCV004998848" Version="1">
+        <ClassifiedConditionList TraitSetID="9460">
+          <ClassifiedCondition DB="MedGen" ID="C3661900">not provided</ClassifiedCondition>
+        </ClassifiedConditionList>
+        <RCVClassifications>
+          <GermlineClassification>
+            <ReviewStatus>criteria provided, single submitter</ReviewStatus>
+            <Description DateLastEvaluated="2023-11-09" SubmissionCount="1">Uncertain significance</Description>
+          </GermlineClassification>
+        </RCVClassifications>
+      </RCVAccession>
+      <RCVAccession Title="NM_005228.5(EGFR):c.2648T&gt;C (p.Leu883Ser) AND Hereditary cancer-predisposing syndrome" Accession="RCV006727237" Version="1">
+        <ClassifiedConditionList TraitSetID="13598">
+          <ClassifiedCondition DB="MedGen" ID="C0027672">Hereditary cancer-predisposing syndrome</ClassifiedCondition>
+        </ClassifiedConditionList>
+        <RCVClassifications>
+          <GermlineClassification>
+            <ReviewStatus>criteria provided, single submitter</ReviewStatus>
+            <Description DateLastEvaluated="2026-05-14" SubmissionCount="1">Uncertain significance</Description>
+          </GermlineClassification>
+        </RCVClassifications>
+      </RCVAccession>
+    </RCVList>
+  </ClassifiedRecord>
+</ClinVarResult>

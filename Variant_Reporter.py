@@ -2,14 +2,15 @@
 import datetime
 import requests
 import re
-from bs4 import BeautifulSoup
+import time
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, PageBreak, Spacer, Paragraph, Frame
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, PageBreak, Spacer, Paragraph
 from reportlab.lib import colors
-from flask import Flask, request, render_template_string, send_file, abort
+from flask import Flask, request, render_template_string, send_file
 from xml.etree import ElementTree as ET
 from io import BytesIO
+from urllib.parse import urlencode
 
 def get_report_date():
     '''Gets the current date in the format 'Month Day, Year'.'''
@@ -18,77 +19,140 @@ def get_report_date():
     
 def send_request(url, headers=None):
     '''Sends a request to the specified URL and return the response.'''
-    response = requests.get(url, headers=headers)
+    response = requests.get(url, headers=headers, timeout=45)
     response.raise_for_status()
     return response
     
-def format_hgvs_cdna_transcript_id_1(hgvs_cdna_transcript_id):
-    '''Formats the HGVS cDNA transcript ID. Example: NM_005228.3(EGFR):c.2648T>C (p.Leu883Ser) -> NM_005228'''
-    hgvs_cdna_transcript_id_formatted_1 = hgvs_cdna_transcript_id.split(':')[0].split('.')[0]
-    return hgvs_cdna_transcript_id_formatted_1
+def parse_variant(value):
+    match = re.fullmatch(r"(NM_\d+\.\d+)\(([A-Za-z0-9_-]+)\):(c\.[^\s()]+)\s*\((p\.[^()]+)\)", value.strip())
+    if not match:
+        raise ValueError('Enter a versioned RefSeq transcript, gene, cDNA change and protein change.')
+    return match.groups()
 
-def get_current_version_hgvs_cdna_transcript_id(hgvs_cdna_transcript_id_formatted_1):
-    '''Gets the current version of the HGVS cDNA transcript ID. Example: NM_005228.3 -> NM_005228.5'''
-    url = f'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nucleotide&id={hgvs_cdna_transcript_id_formatted_1}&rettype=gb&retmode=xml'
-    response = send_request(url)
-    root = ET.fromstring(response.content)
-    for item in root.findall('.//GBSeq'):
-        current_version_hgvs_cdna_transcript_id = item.find('GBSeq_accession-version').text
-        return current_version_hgvs_cdna_transcript_id
-    
-def format_hgvs_cdna_transcript_id_2(hgvs_cdna_transcript_id):
-    '''Extracts the portion after the transcript ID, e.g. NM_005228.3(EGFR):c.2648T>C (p.Leu883Ser) -> c.2648T>C (p.Leu883Ser)'''
-    hgvs_cdna_transcript_id_formatted_2 = hgvs_cdna_transcript_id.split(':', 1)[1]
-    return hgvs_cdna_transcript_id_formatted_2
 
-def get_full_current_version_hgvs_cdna_transcript_id(current_version_hgvs_cdna_transcript_id, hgvs_cdna_transcript_id_formatted_2):
-    '''Gets the full, current version of the HGVS cDNA transcript ID. Example: NM_005228.3:c.2648T>C -> NM_005228.5:c.2648T>C'''
-    full_current_version_hgvs_cdna_transcript_id = current_version_hgvs_cdna_transcript_id + ':' + hgvs_cdna_transcript_id_formatted_2
-    return full_current_version_hgvs_cdna_transcript_id
+def get_refseq_record(accession):
+    url = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?' + urlencode({
+        'db': 'nucleotide', 'id': accession, 'rettype': 'gb', 'retmode': 'xml'})
+    records = ET.fromstring(send_request(url).content).findall('.//GBSeq')
+    if len(records) != 1:
+        raise ValueError(f'Expected one RefSeq record for {accession}.')
+    actual = records[0].findtext('GBSeq_accession-version')
+    if not actual or (actual != accession if '.' in accession else actual.split('.')[0] != accession):
+        raise ValueError(f'RefSeq did not return the requested transcript {accession}.')
+    return records[0]
 
-def get_clinvar_accession_id(full_current_version_hgvs_cdna_transcript_id):
-    url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=clinvar&term={full_current_version_hgvs_cdna_transcript_id}&retmode=json"
-    response = send_request(url)
-    data = response.json()
-    if 'esearchresult' in data and 'idlist' in data['esearchresult']:
-        ids = data['esearchresult']['idlist']
-        clinvar_accession_id = ids[0]
-    return clinvar_accession_id
 
-def get_rsID(clinvar_accession_id):
-    '''Scrapes the rsID from the ClinVar Variation page.'''
-    url = f'https://www.ncbi.nlm.nih.gov/clinvar/variation/{clinvar_accession_id}/'
-    response = send_request(url)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    rsid_link = soup.find('a', href=lambda href: href and '/snp/rs' in href)
-    rsID = rsid_link.text.strip()
-    rsID = rsID.replace("dbSNP:", "")
-    rsID = rsID.strip()
-    return rsID
+def get_current_version_hgvs_cdna_transcript_id(accession):
+    return get_refseq_record(accession).findtext('GBSeq_accession-version')
 
-def construct_id_for_validation(hgvs_cdna_transcript_id, full_current_version_hgvs_cdna_transcript_id):
-    '''Example: NM_005228.3(EGFR):c.2648T>C(p.Leu883Ser) becomes NM_005228.5(EGFR):c.2648T>C(p.Leu883Ser)''' 
-    # Extract just the transcript ID part from the full current version
-    updated_transcript_id = full_current_version_hgvs_cdna_transcript_id.split(':')[0]
-    # Extract gene name and everything after the colon in the old HGVS string
-    gene_symbol = hgvs_cdna_transcript_id.split('(')[1].split(')')[0]
-    after_colon = hgvs_cdna_transcript_id.split(':', 1)[1]
-    # Combine to form updated ID
-    id_for_validation = f"{updated_transcript_id}({gene_symbol}):{after_colon}"
-    return gene_symbol, id_for_validation
 
-def validate(id_for_validation, clinvar_accession_id):
-    url = f"https://www.ncbi.nlm.nih.gov/clinvar/variation/{clinvar_accession_id}"
-    response = send_request(url)
-    soup = BeautifulSoup(response.content, "html.parser")
-    check = None
-    for dt in soup.find_all("dt"):
-        if dt.text.strip() == "Identifiers":
-            dd = dt.find_next_sibling("dd")
-            p = dd.find("p")
-            check = p.text
-    if check != id_for_validation:
-        raise ValueError(f"Validation failed: expected '{id_for_validation}', found '{check}'")
+def coding_sequence(record):
+    features = [f for f in record.findall('./GBSeq_feature-table/GBFeature')
+                if f.findtext('GBFeature_key') == 'CDS']
+    if len(features) != 1:
+        raise ValueError('Cannot verify the original protein change: missing or ambiguous CDS.')
+    location = features[0].findtext('GBFeature_location', '')
+    match = re.fullmatch(r'(\d+)\.\.(\d+)', location)
+    sequence = record.findtext('GBSeq_sequence')
+    if not match or not sequence:
+        raise ValueError('Cannot verify the original protein change from this CDS.')
+    start, end = map(int, match.groups())
+    if not 1 <= start <= end <= len(sequence):
+        raise ValueError('Invalid RefSeq CDS coordinates.')
+    return sequence[start - 1:end].upper()
+
+
+def verify_refseq_protein(accession, cdna, protein):
+    """Verify a coding substitution directly when historical HGVS lacks protein data."""
+    match = re.fullmatch(r'c\.(\d+)([ACGT])>([ACGT])', cdna)
+    if not match:
+        raise ValueError('No historical protein annotation; this variant cannot be verified automatically.')
+    sequence = coding_sequence(get_refseq_record(accession))
+    position = int(match[1]) - 1
+    if not 0 <= position < len(sequence) or sequence[position] != match[2]:
+        raise ValueError('The original cDNA reference base does not match RefSeq.')
+    codon_start = position // 3 * 3
+    codon = sequence[codon_start:codon_start + 3]
+    changed = list(codon)
+    changed[position % 3] = match[3]
+    bases = 'TCAG'
+    amino_acids = 'FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG'
+    codons = [a + b + c for a in bases for b in bases for c in bases]
+    table = dict(zip(codons, amino_acids))
+    names = dict(zip('FLSY*CWPHQRIMTNKVADEG',
+                     ['Phe', 'Leu', 'Ser', 'Tyr', 'Ter', 'Cys', 'Trp', 'Pro',
+                      'His', 'Gln', 'Arg', 'Ile', 'Met', 'Thr', 'Asn', 'Lys',
+                      'Val', 'Ala', 'Asp', 'Glu', 'Gly']))
+    if codon not in table or ''.join(changed) not in table:
+        raise ValueError('The original coding sequence contains an unverifiable codon.')
+    before, after = table[codon], table[''.join(changed)]
+    expected = f'p.{names[before]}{position // 3 + 1}{names[after]}'
+    if before == after or protein != expected:
+        raise ValueError('The supplied protein change does not match the original RefSeq codon.')
+
+
+def resolve_variant(value):
+    original, gene, cdna, protein = parse_variant(value)
+    current = get_current_version_hgvs_cdna_transcript_id(original.split('.')[0])
+    if (not re.fullmatch(r'NM_\d+\.\d+', current) or
+            current.split('.')[0] != original.split('.')[0] or
+            int(current.split('.')[1]) < int(original.split('.')[1])):
+        raise ValueError('NCBI did not return a valid current version of the original transcript.')
+    # Search the ORIGINAL expression, then require explicit same-allele evidence.
+    expression = f'{original}:{cdna}'
+    url = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?' + urlencode({
+        'db': 'clinvar', 'term': f'"{expression}"', 'retmode': 'json', 'retmax': 100})
+    search = send_request(url).json()['esearchresult']
+    ids = search['idlist']
+    if not ids or int(search['count']) != len(ids):
+        raise ValueError('No complete ClinVar search result for the original variant.')
+    matches = []
+    for variation_id in ids:
+        url = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?' + urlencode({
+            'db': 'clinvar', 'rettype': 'vcv', 'is_variationid': 'true', 'id': variation_id})
+        root = ET.fromstring(send_request(url).content)
+        for allele in root.findall('.//ClassifiedRecord/SimpleAllele'):
+            if allele.get('VariationID') != variation_id:
+                continue
+            hgvs = allele.findall('./HGVSlist/HGVS')
+            old = [h for h in hgvs if h.findtext('./NucleotideExpression/Expression') == expression]
+            if old and gene in {g.get('Symbol') for g in allele.findall('./GeneList/Gene')}:
+                matches.append((variation_id, allele, old, hgvs, root))
+    if len(matches) != 1:
+        raise ValueError('The original variant does not match exactly one ClinVar allele.')
+    variation_id, allele, old, hgvs, root = matches[0]
+    updated = [h for h in hgvs if h.find('NucleotideExpression') is not None and
+               h.find('NucleotideExpression').get('sequenceAccessionVersion') == current]
+    if len(updated) != 1:
+        raise ValueError(f'No unique same-allele mapping to updated transcript {current}.')
+    nucleotide = updated[0].find('NucleotideExpression')
+    updated_cdna = nucleotide.get('change')
+    updated_protein = updated[0].find('ProteinExpression')
+    if not updated_cdna or not updated_cdna.startswith('c.') or updated_protein is None or not updated_protein.get('change'):
+        raise ValueError('Updated cDNA or protein annotation is missing.')
+    if nucleotide.findtext('Expression') != f'{current}:{updated_cdna}':
+        raise ValueError('Inconsistent updated transcript annotation.')
+    old_proteins = {h.find('ProteinExpression').get('change') for h in old
+                    if h.find('ProteinExpression') is not None}
+    if not old_proteins:
+        verify_refseq_protein(original, cdna, protein)
+        old_proteins = {protein}
+    if old_proteins != {protein}:
+        raise ValueError('The supplied protein change does not match the original variant.')
+    locations = allele.findall('./Location/SequenceLocation')
+    locations = [loc for loc in locations if loc.get('Assembly') == 'GRCh38']
+    rsids = {x.get('ID') for x in allele.findall('./XRefList/XRef') if x.get('DB') == 'dbSNP' and x.get('Type') == 'rs'}
+    if len(locations) != 1 or len(rsids) != 1:
+        raise ValueError('Missing or ambiguous GRCh38 location or dbSNP identifier.')
+    location = locations[0]
+    if not location.get('start') or not location.get('stop') or not location.get('Chr'):
+        raise ValueError('Incomplete GRCh38 location.')
+    return {'transcript': current, 'gene': gene, 'cdna': updated_cdna,
+            'protein': f"({updated_protein.get('change')})", 'clinvar_id': variation_id,
+            'rsid': 'rs' + next(iter(rsids)), 'position': int(location.get('start')),
+            'end': int(location.get('stop')), 'chromosome': location.get('Chr'),
+            'classifications': get_clinvar(root)}
+
 
 def get_full_gene_name_and_ensembl_gene_id(gene_symbol):
     '''Gets the full gene name and Ensembl gene ID for the specified gene symbol.'''
@@ -133,6 +197,8 @@ def get_high_protein_expression(ensembl_gene_id):
     response = send_request(url)
     root = ET.fromstring(response.content)
     high_protein_expression = []
+    if not root.findall('.//data/level[@type="expression"]'):
+        raise ValueError('Protein expression data is missing.')
     for data in root.findall('.//data'):
         tissue = data.find('tissue')
         levels = data.findall('level[@type="expression"]')
@@ -142,44 +208,20 @@ def get_high_protein_expression(ensembl_gene_id):
         return(', '.join(high_protein_expression).lower())
     return('Protein not highly expressed.')
 
-def extract_protein_change(hgvs_transcript_id):
-    '''Extracts the protein change, preserving parentheses if present.'''
-    if "p." not in hgvs_transcript_id:
-        return None
-    start = hgvs_transcript_id.find("p.")
-    end = hgvs_transcript_id.find(")", start)
-    change = hgvs_transcript_id[start:end] if end != -1 else hgvs_transcript_id[start:]
-    protein_change = f"({change})" if "(" in hgvs_transcript_id[:start] and end != -1 else change
-    return protein_change
+def get_ensembl_transcript_id(current_version_hgvs_cdna_transcript_id, gene_symbol):
+    """Require one explicit, versioned RefSeq-to-Ensembl MANE mapping."""
+    url = f'https://rest.ensembl.org/lookup/symbol/homo_sapiens/{gene_symbol}?expand=1;mane=1'
+    data = send_request(url, {'Content-Type': 'application/json'}).json()
+    matches = {transcript['id'] for transcript in data.get('Transcript', [])
+               for mapping in transcript.get('MANE', [])
+               if mapping.get('refseq_match') == current_version_hgvs_cdna_transcript_id
+               and mapping.get('id') == transcript.get('id')
+               and transcript.get('assembly_name') == 'GRCh38'}
+    if len(matches) != 1:
+        raise ValueError(f'No unique exact Ensembl mapping for {current_version_hgvs_cdna_transcript_id}.')
+    return matches.pop()
 
-def extract_cdna_change(hgvs_cdna_transcript_id):
-    cdna_change = hgvs_cdna_transcript_id.split(':')[1].split('(')[0].strip()
-    return cdna_change
-
-def get_grch38_variant_position(rsID):
-    '''Gets the variant position (in GRCh38 currently) for the specified current version HGVS cDNA transcript ID's rsID.'''
-    url = f"https://rest.ensembl.org/variation/human/{rsID}?content-type=application/json"
-    response = send_request(url)
-    data = response.json()
-    # Check for mappings to GRCh38
-    for mapping in data.get("mappings", []):
-        if mapping.get("assembly_name") == "GRCh38":
-            grch38_variant_position = mapping.get("start")
-            return grch38_variant_position
-    return None
-
-def get_ensembl_transcript_id(current_version_hgvs_cdna_transcript_id):
-    '''Gets the Ensembl transcript ID for the specified HGVS cDNA transcript ID.'''
-    url = f'https://rest.ensembl.org/xrefs/symbol/homo_sapiens/{current_version_hgvs_cdna_transcript_id}?external_db=RefSeq_mRNA'
-    headers = {'Content-Type': 'application/json'}
-    response = send_request(url, headers)
-    data = response.json()
-    for entry in data:
-        if entry['type'] == 'transcript':
-            ensembl_transcript_id = entry['id']
-            return ensembl_transcript_id
-
-def get_transcript_details_and_ensembl_protein_id(ensembl_transcript_id, grch38_variant_position):
+def get_transcript_details_and_ensembl_protein_id(ensembl_transcript_id, grch38_variant_position, variant_end, chromosome):
     '''Gets the Ensembl protein ID, transcript length, translation length, total exons, coding exons,
     exon number, and coding exons for the specified Ensembl transcript ID and variant position.'''
     
@@ -187,6 +229,10 @@ def get_transcript_details_and_ensembl_protein_id(ensembl_transcript_id, grch38_
     headers = {'Content-Type': 'application/json'}
     response = send_request(url, headers)
     data = response.json()
+
+    if (data.get('assembly_name') != 'GRCh38' or data.get('id') != ensembl_transcript_id
+            or data.get('seq_region_name') != chromosome):
+        raise ValueError('Ensembl returned a different transcript or assembly.')
 
     # Extract basic information
     if data['assembly_name'] == 'GRCh38':
@@ -204,133 +250,110 @@ def get_transcript_details_and_ensembl_protein_id(ensembl_transcript_id, grch38_
                        int(exon['start']) <= int(translation['end']) and 
                        int(exon['end']) >= int(translation['start']))
 
-    # Determine the exon number containing the variant position (GRCh38 only)
-    exon_number = next((index + 1 for index, exon in enumerate(data['Exon'])
+    if data.get('strand') not in (1, -1):
+        raise ValueError('Transcript strand is missing.')
+    exons = sorted(data['Exon'], key=lambda exon: int(exon['start']), reverse=data['strand'] == -1)
+    # Number exons in transcript order, including reverse-strand transcripts.
+    exon_number = next((index + 1 for index, exon in enumerate(exons)
                         if exon.get('assembly_name') == 'GRCh38' and 
-                        int(exon['start']) <= int(grch38_variant_position) <= int(exon['end'])), None)
+                        int(exon['start']) <= int(grch38_variant_position) <= variant_end <= int(exon['end'])), None)
+
+    if exon_number is None:
+        raise ValueError('Variant position is not in the verified transcript exons.')
 
     return ensembl_protein_id, transcript_length, translation_length, total_exons, coding_exons, exon_number
 
 
 def get_domains(ensembl_protein_id):
-    '''Gets the protein domains for the specified Ensembl protein ID.'''
+    '''Gets protein domains, retrying temporary failures and failing if unavailable.'''
     url = f'https://rest.ensembl.org/overlap/translation/{ensembl_protein_id}'
     headers = {'Content-Type': 'application/json'}
-    response = send_request(url, headers)
-    domain_data = response.json()
+    for attempt in range(3):
+        try:
+            response = send_request(url, headers)
+            domain_data = response.json()
+            if not isinstance(domain_data, list) or any(
+                not isinstance(domain, dict) or
+                not all(domain.get(key) is not None and domain.get(key) != ''
+                        for key in ('type', 'description', 'start', 'end'))
+                for domain in domain_data
+            ):
+                raise ValueError('Unexpected protein-domain response from Ensembl')
+            break
+        except (requests.RequestException, ValueError) as exc:
+            status = getattr(getattr(exc, 'response', None), 'status_code', None)
+            retryable = status is None or status in (429, 500, 502, 503, 504)
+            if attempt == 2 or not retryable:
+                raise ValueError(
+                    f'Protein domains could not be retrieved for {ensembl_protein_id}. '
+                    'No report was generated. Please try again later.'
+                ) from exc
+            time.sleep(0.5 * (2 ** attempt))
+    if not domain_data:
+        raise ValueError(
+            f'No protein-domain data returned for {ensembl_protein_id}. '
+            'No report was generated.'
+        )
     domains = []
     for domain in domain_data:
         domains.append({
             'Source': domain['type'],
-            'Description': domain.get('description'),
+            'Description': domain['description'],
             'Start': str(domain['start']),
             'End': str(domain['end'])
         })
     return domains 
 
-def get_clinvar(rsID):
-    '''Gets the variant classification, variant condition, and variant more info for the specified rsID. There may or may not be
-    one or more Clinvar entries for the specified rsID. Also formats the output for the table in the pdf.'''
-    url = f'https://www.ncbi.nlm.nih.gov/clinvar/?term={rsID}'
-    response = send_request(url)
-    clinvar = []
-    soup = BeautifulSoup(response.text, 'html.parser')
-    tables = soup.find_all('table')
-    if len(tables) > 4:
-        correct_table = tables[4]
-        rows = correct_table.find_all('tr')
-        for row in rows:
-            cells = row.find_all('td')
-            if len(cells) >= 5:
-                classification_info = cells[0].text.strip()
-                condition_info = cells[2].text.strip()
-                more_info = cells[4].text.strip()
-                if '(more)' in more_info:
-                    more_info_parts = more_info.split("(more)")
-                    if len(more_info_parts) > 1:
-                        more_info = more_info_parts[1].strip()
-                if '(less)' in more_info:
-                    more_info = more_info.replace('(less)', '').strip()
-                clinvar.append({
-                    'Variant classification': classification_info,
-                    'Variant condition': condition_info,
-                    'Variant more info': more_info
-                })
-                    
-    cleaned_clinvar = []
-    for entry in clinvar:
-        cleaned_entry = {}
-        for key, value in entry.items():
-            if key == 'Variant classification' or key == 'Variant more info':
-                cleaned_value = ' '.join(value.split())
-                cleaned_entry[key] = cleaned_value
-            elif key == 'Variant condition':
-                parts = [part.strip() for part in value.split('\n') if part.strip()]
-                condition_dict = {}
-                if len(parts) > 0:
-                    condition_dict['Condition'] = 'Condition: ' + str(parts[0])
-                if len(parts) > 1:
-                    condition_dict['Affected status'] = parts[1]
-                if len(parts) > 2:
-                    condition_dict['Allele origin'] = parts[2]
-                cleaned_entry.update(condition_dict)
-            else:
-                cleaned_entry[key] = value
-        cleaned_clinvar.append(cleaned_entry)
-    return cleaned_clinvar
-
-"""print("Formatted HGVS part 1:", hgvs_cdna_transcript_id_formatted_1)
-print("Current version HGVS:", current_version_hgvs_cdna_transcript_id)
-print("Formatted HGVS part 2:", hgvs_cdna_transcript_id_formatted_2)
-print("Full current version HGVS:", full_current_version_hgvs_cdna_transcript_id)
-print("ClinVar accession ID:", clinvar_accession_id)
-print("rsID:", rsID)
-print("Gene symbol:", gene_symbol)
-print("ID for validation:", id_for_validation)
-print("Full gene name:", full_gene_name)
-print("Ensembl gene ID:", ensembl_gene_id)
-print("Chromosome:", chromosome)
-print("Start position:", start)
-print("End position:", end)
-print("Cytogenetic band:", cytogenetic_band)
-print("High Protein Expression:", high_protein_expression)
-print("Protein Change:", protein_change)
-print("cDNA Change:", cdna_change)
-print("Grch38 variant position:", grch38_variant_position)
-print("Ensembl transcript ID:", ensembl_transcript_id)
-print("ensembl_protein_id, transcript_length, translation_length, total_exons, coding_exons, exon_number:", ensembl_protein_id, transcript_length, translation_length, total_exons, coding_exons, exon_number)"""
+def get_clinvar(root):
+    """Read classifications from the same variation record used for mapping."""
+    rows = []
+    for rcv in root.findall('.//ClassifiedRecord/RCVList/RCVAccession'):
+        conditions = [node.text for node in rcv.findall('./ClassifiedConditionList/ClassifiedCondition')]
+        classifications = rcv.find('RCVClassifications')
+        if not conditions or not all(conditions) or classifications is None:
+            raise ValueError('ClinVar condition or classification data is missing.')
+        for classification in classifications:
+            description = classification.findtext('Description')
+            review = classification.findtext('ReviewStatus')
+            if not description or not review:
+                raise ValueError('ClinVar classification or review status is missing.')
+            rows.append({'Variant classification': description,
+                         'Condition': '; '.join(conditions),
+                         'Variant more info': f'{classification.tag}: {review}'})
+    if not rows:
+        raise ValueError('ClinVar classification data is missing.')
+    return rows
 
 
 def get_results_dict(hgvs_cdna_transcript_id):
     '''Gets the results dictionary for the specified HGVS cDNA transcript ID. Also checks that the HGVS ID is valid
     and throws an error if it is not.'''
     report_date = get_report_date()
-    hgvs_cdna_transcript_id_formatted_1 = format_hgvs_cdna_transcript_id_1(hgvs_cdna_transcript_id)
-    current_version_hgvs_cdna_transcript_id = get_current_version_hgvs_cdna_transcript_id(hgvs_cdna_transcript_id_formatted_1)
-    hgvs_cdna_transcript_id_formatted_2 = format_hgvs_cdna_transcript_id_2(hgvs_cdna_transcript_id)
-    full_current_version_hgvs_cdna_transcript_id = get_full_current_version_hgvs_cdna_transcript_id(current_version_hgvs_cdna_transcript_id, hgvs_cdna_transcript_id_formatted_2)
-    clinvar_accession_id = get_clinvar_accession_id(full_current_version_hgvs_cdna_transcript_id)
-    rsID = get_rsID(clinvar_accession_id) 
-    gene_symbol, id_for_validation = construct_id_for_validation(hgvs_cdna_transcript_id, full_current_version_hgvs_cdna_transcript_id)
-    validate(id_for_validation, clinvar_accession_id)  
+    variant = resolve_variant(hgvs_cdna_transcript_id)
+    current_version_hgvs_cdna_transcript_id = variant['transcript']
+    gene_symbol = variant['gene']
+    rsID = variant['rsid']
+    protein_change = variant['protein']
+    cdna_change = variant['cdna']
+    hgvs_cdna_transcript_id_formatted_2 = f'{cdna_change} {protein_change}'
     full_gene_name, ensembl_gene_id = get_full_gene_name_and_ensembl_gene_id(gene_symbol)
     chromosome, start, end = get_gene_start_end_chromosome(gene_symbol)
     cytogenetic_band = get_cytogenetic_band(chromosome, start, end)
     high_protein_expression = get_high_protein_expression(ensembl_gene_id)
-    protein_change = extract_protein_change(hgvs_cdna_transcript_id)
-    cdna_change = extract_cdna_change(hgvs_cdna_transcript_id)
-    grch38_variant_position = get_grch38_variant_position(rsID)
-    ensembl_transcript_id = get_ensembl_transcript_id(current_version_hgvs_cdna_transcript_id)
-    ensembl_protein_id, transcript_length, translation_length, total_exons, coding_exons, exon_number =  get_transcript_details_and_ensembl_protein_id(ensembl_transcript_id, grch38_variant_position)
+    if chromosome != 'chr' + variant['chromosome']:
+        raise ValueError('Variant and gene chromosomes do not match.')
+    grch38_variant_position = variant['position']
+    ensembl_transcript_id = get_ensembl_transcript_id(current_version_hgvs_cdna_transcript_id, gene_symbol)
+    ensembl_protein_id, transcript_length, translation_length, total_exons, coding_exons, exon_number =  get_transcript_details_and_ensembl_protein_id(ensembl_transcript_id, grch38_variant_position, variant['end'], variant['chromosome'])
     domains = get_domains(ensembl_protein_id)
-    cleaned_clinvar = get_clinvar(rsID)
+    cleaned_clinvar = variant['classifications']
         
     source_info = (
     f'https://www.proteinatlas.org/{ensembl_gene_id}-{gene_symbol}/tissue\n'
     f'https://www.ncbi.nlm.nih.gov/snp/?term={rsID}'
     )
     if len(cleaned_clinvar) > 0:
-        source_info += f'\nhttps://www.ncbi.nlm.nih.gov/clinvar/?term={rsID}'
+        source_info += f"\nhttps://www.ncbi.nlm.nih.gov/clinvar/variation/{variant['clinvar_id']}/"
     
     results_dict = {
         'Gene symbol': gene_symbol,
@@ -339,6 +362,7 @@ def get_results_dict(hgvs_cdna_transcript_id):
         'Full gene name': full_gene_name,
         'Cytogenetic band': cytogenetic_band,
         'High protein expression': high_protein_expression,
+        'Original variant': hgvs_cdna_transcript_id,
         'Current HGVS ID': current_version_hgvs_cdna_transcript_id,
         'cDNA change' : cdna_change,
         'Protein change': protein_change,
@@ -352,6 +376,9 @@ def get_results_dict(hgvs_cdna_transcript_id):
         'Sources': source_info
     }
     
+    for field, value in results_dict.items():
+        if value is None or value == '' or value == []:
+            raise ValueError(f'Required report field is missing: {field}.')
     return results_dict
 
 def curate_data_for_pdf(results_dict):
@@ -552,6 +579,7 @@ html_template = """
 <body>
     <div class="container mt-5">
         <h1 class="text-center">Variant Report Generator</h1>
+        {% if error %}<div class="alert alert-danger" role="alert">{{ error }} No report was generated.</div>{% endif %}
         <form method="post">
             <div class="form-group">
                 <label for="hgvs_cdna_transcript_id">HGVS cDNA Transcript ID</label>
@@ -569,11 +597,17 @@ html_template = """
 def index():    
     if request.method == 'POST':
         hgvs_cdna_transcript_id = request.form['hgvs_cdna_transcript_id']
-        results_dict = get_results_dict(hgvs_cdna_transcript_id)
+        try:
+            results_dict = get_results_dict(hgvs_cdna_transcript_id)
+        except (ValueError, KeyError, TypeError, ET.ParseError) as exc:
+            return render_template_string(html_template, error=f'Variant validation failed: {exc}'), 422
+        except requests.RequestException:
+            return render_template_string(html_template, error='A required data service is unavailable. Please try again later.'), 503
         curated_data = curate_data_for_pdf(results_dict)
         ordered_keys = [
             'title',
             'Report generated on',
+            'Original variant',
             'Current HGVS ID',
             'cDNA change',
             'Protein change',
@@ -604,4 +638,5 @@ app.debug = True
 def run_app():
     app.run()
 
-run_app()
+if __name__ == '__main__':
+    run_app()
